@@ -1,0 +1,8 @@
+server = "10.0.1.4:2342"
+
+[[hook]]
+src-addr = 0x04
+src-port = 0x01
+payload = [0x06, 0x00]
+cooldown = 20000
+run = ["mpv", "door_bell.wav"]

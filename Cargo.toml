@@ -1,0 +1,15 @@
+[package]
+name = "cand-hook"
+version = "0.1.0"
+authors = ["Kilobyte22 <stiepen22@gmx.de>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+labctl = { path = "../labctl" }
+serde = { version = "1.0.117", features = ["derive"] }
+toml = "0.5.7"
+log = "0.4.11"
+env_logger = "0.8.2"
+clap = "2.33.1"
