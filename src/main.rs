@@ -1,9 +1,12 @@
-use std::net::TcpStream;
-use std::process::Command;
-use std::{fs, thread};
+use tokio::net::TcpStream;
+use tokio::process::Command;
+use std::fs;
 use labctl::can::CanPacket;
 use crate::config::Hook;
-use std::time::{Instant, Duration};
+use tokio::time::{Instant, Duration, self};
+use tokio::task;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 mod config;
 
@@ -18,7 +21,8 @@ fn args<'a, 'b>() -> clap::App<'a, 'b> {
         )
 }
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
 
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
@@ -28,51 +32,60 @@ fn main() {
         &fs::read_to_string(&matches.value_of("config").unwrap()).unwrap()
     ).unwrap();
 
-    let mut stream = TcpStream::connect(&config.server).unwrap();
+    let mut stream = TcpStream::connect(&config.server).await.unwrap();
+
+    let cooldowns = Arc::new(Mutex::new(vec![None; config.hooks.len()]));
 
     log::info!("Connected to cand");
 
     loop {
-        let p = labctl::can::read_packet(&mut stream).unwrap();
+        let p = labctl::can::read_packet_async(&mut stream).await.unwrap();
         log::trace!("Packet: {:?}", p);
 
-        for hook in &mut config.hooks {
+        for (hook_num, hook) in config.hooks.iter_mut().enumerate() {
             if match_packet_against_config(&p, &hook) {
-                /*
-                if let Some(last_activation) = hook.cooldown_last_trigger {
-                    if let Some(cooldown) = hook.cooldown {
-                        if last_activation + Duration::from_millis(cooldown) > Instant::now() {
-                            log::debug!("Hook {:?} cooldown still pending", hook);
-                            continue;
+                {
+                    let cooldown_lock = cooldowns.lock().await;
+                    if let Some(last_activation) = cooldown_lock[hook_num] {
+                        if let Some(cooldown) = hook.cooldown {
+                            if last_activation + Duration::from_millis(cooldown) > Instant::now() {
+                                log::debug!("Hook {:?} cooldown still pending", hook);
+                                continue;
+                            }
                         }
                     }
                 }
-                */
 
-                if let Some(delay) = hook.delay {
-                    thread::sleep(Duration::from_millis(delay))
-                }
+                let hook = hook.clone();
+                let p = p.clone();
+                let cooldowns = cooldowns.clone();
 
-                log::info!("Hook {:?} run", hook);
-                let mut cmd = Command::new(hook.run.get(0).unwrap());
-                cmd
-                    .env("CAN_SRC_ADDR", format!("{:x}", p.src_addr))
-                    .env("CAN_DST_ADDR", format!("{:x}", p.src_addr))
-                    .env("CAN_SRC_PORT", format!("{:x}", p.src_addr))
-                    .env("CAN_DST_PORT", format!("{:x}", p.src_addr))
-                    .env(
-                        "CAN_PAYLOAD",
-                        p.payload
-                            .iter()
-                            .map(|x| format!("{:x}", x))
-                            .collect::<String>()
-                    );
-                for arg in hook.run.iter().skip(1) {
-                    cmd.arg(arg);
-                }
+                task::spawn(async move {
+                    if let Some(delay) = hook.delay {
+                        time::sleep(Duration::from_millis(delay)).await;
+                    }
 
-                cmd.spawn().unwrap();
-                //hook.cooldown_last_trigger = Some(Instant::now())
+                    log::info!("Hook {:?} run", hook);
+                    let mut cmd = Command::new(hook.run.get(0).unwrap());
+                    cmd
+                        .env("CAN_SRC_ADDR", format!("{:x}", p.src_addr))
+                        .env("CAN_DST_ADDR", format!("{:x}", p.src_addr))
+                        .env("CAN_SRC_PORT", format!("{:x}", p.src_addr))
+                        .env("CAN_DST_PORT", format!("{:x}", p.src_addr))
+                        .env(
+                            "CAN_PAYLOAD",
+                            p.payload
+                                .iter()
+                                .map(|x| format!("{:x}", x))
+                                .collect::<String>()
+                        );
+                    for arg in hook.run.iter().skip(1) {
+                        cmd.arg(arg);
+                    }
+
+                    cmd.spawn().unwrap();
+                    cooldowns.lock().await[hook_num] = Some(Instant::now())
+                });
             }
         }
     }

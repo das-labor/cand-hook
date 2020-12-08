@@ -1,15 +1,14 @@
 use serde::Deserialize;
 use std::net::SocketAddr;
-use std::time::Instant;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub server: SocketAddr,
     #[serde(rename = "hook")]
     pub hooks: Vec<Hook>
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct Hook {
     #[serde(rename = "src-addr")]
     pub src_addr: Option<u8>,
