@@ -44,17 +44,6 @@ async fn main() {
 
         for (hook_num, hook) in config.hooks.iter_mut().enumerate() {
             if match_packet_against_config(&p, &hook) {
-                {
-                    let cooldown_lock = cooldowns.lock().await;
-                    if let Some(last_activation) = cooldown_lock[hook_num] {
-                        if let Some(cooldown) = hook.cooldown {
-                            if last_activation + Duration::from_millis(cooldown) > Instant::now() {
-                                log::debug!("Hook {:?} cooldown still pending", hook);
-                                continue;
-                            }
-                        }
-                    }
-                }
 
                 let hook = hook.clone();
                 let p = p.clone();
@@ -64,6 +53,18 @@ async fn main() {
                     if let Some(delay) = hook.delay {
                         log::info!("Pending hook execution in {} ms", delay);
                         time::sleep(Duration::from_millis(delay)).await;
+                    }
+
+                    {
+                        let cooldown_lock = cooldowns.lock().await;
+                        if let Some(last_activation) = cooldown_lock[hook_num] {
+                            if let Some(cooldown) = hook.cooldown {
+                                if last_activation + Duration::from_millis(cooldown) > Instant::now() {
+                                    log::debug!("Hook {:?} cooldown still pending", hook);
+                                    return;
+                                }
+                            }
+                        }
                     }
 
                     log::info!("Hook {:?} run", hook);
