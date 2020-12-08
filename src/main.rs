@@ -62,6 +62,7 @@ async fn main() {
 
                 task::spawn(async move {
                     if let Some(delay) = hook.delay {
+                        log::info!("Pending hook execution in {} ms", delay);
                         time::sleep(Duration::from_millis(delay)).await;
                     }
 
